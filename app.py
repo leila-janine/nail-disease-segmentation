@@ -11,12 +11,11 @@ st.set_page_config(page_title="Nail Disease Segmentation", layout="wide")
 
 # --- Configuration ---
 MODEL_PATH = "best.pt" # Make sure best.pt is in the same folder as app.py
-CONFIDENCE_THRESHOLD = 0.20 # Keep low for detecting healthy/subtle cases
+CONFIDENCE_THRESHOLD = 0.10 # Keep low for detecting healthy/subtle cases
 MASK_ALPHA = 0.5 # Transparency of the segmentation masks (0.0 to 1.0)
 PROJECT_GROUP_NAME = "youngstunna" # Your group name
 
 # --- Inject Custom CSS ---
-# (Same CSS as provided in the previous response - included here for completeness)
 st.markdown("""
 <style>
 /* --- General App Styling --- */
@@ -93,12 +92,21 @@ div[data-testid="stVerticalBlock"]:nth-child(2) > div[style*="flex-direction: co
 div[data-testid="stFileUploader"] section {
     border: 2px dashed #ccc;
     background-color: #f8f9fa;
-    padding: 1.5rem; /* Increase padding */
+    padding: 2rem; /* Increased padding */
     border-radius: 5px;
+    /* Ensure default text is visible */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
-div[data-testid="stFileUploader"] section:hover {
-     background-color: #e9ecef;
+/* Style the placeholder text */
+div[data-testid="stFileUploader"] section p {
+    color: #6c757d !important; /* Lighter gray text */
+    font-size: 1rem;
 }
+div[data-testid="stFileUploader"] section:hover { background-color: #e9ecef; }
+
 /* Style titles/subheaders in the second column */
 div[data-testid="stVerticalBlock"]:nth-child(2) > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] h1,
 div[data-testid="stVerticalBlock"]:nth-child(2) > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] h2,
@@ -129,8 +137,6 @@ def load_yolo_model(model_path):
     """Loads the YOLO model."""
     try:
         model = YOLO(model_path)
-        # Perform a dummy inference to ensure model loads correctly (optional)
-        # model(np.zeros((640, 640, 3), dtype=np.uint8))
         return model
     except Exception as e:
         print(f"Error loading model: {e}") # Log error for debugging
@@ -141,8 +147,7 @@ col1, col2 = st.columns([1, 1.2], gap="large") # Give slightly more space to rig
 
 # --- Content for Left Column (Blue Area) ---
 with col1:
-    # st.image("your_logo.png", width=150) # Replace with your logo if you have one
-    st.header("Nail Disease Segmentation")
+    st.header("Nail Condition Segmentation")
     st.write(f"""
         An AI-powered application developed by **Group {PROJECT_GROUP_NAME}** for the AI2 T1 AY2526 course.
         This tool analyzes nail images to identify potential health conditions.
@@ -150,7 +155,7 @@ with col1:
     """)
     st.markdown("---")
     st.write("**How it works:**")
-    st.write("1. Upload a clear image of a nail.")
+    st.write("1. Upload a clear image of a nail (JPG, PNG, JPEG).")
     st.write("2. The AI model analyzes the image.")
     st.write("3. Detected conditions (or healthy status) are highlighted.")
     st.write("_Disclaimer: This tool is for educational purposes only and not a substitute for professional medical diagnosis._")
@@ -164,23 +169,36 @@ with col2:
         st.error(f"FATAL ERROR: Model failed to load from path '{MODEL_PATH}'. Ensure 'best.pt' is in the application directory and not corrupted.")
         st.stop()
     else:
-        uploaded_file = st.file_uploader("Choose an image (JPG, PNG, JPEG)...", type=["jpg", "png", "jpeg"], label_visibility="visible")
+        # File Uploader with specific label text
+        uploaded_file = st.file_uploader(
+            "Drag and drop file here or click Browse files (Limit 200MB per file • JPG, PNG, JPEG)",
+            type=["jpg", "png", "jpeg"],
+            label_visibility="visible" # Ensure label with instructions is shown
+        )
+
+        # Placeholders for results and messages
+        result_placeholder = st.empty()
+        message_placeholder = st.empty()
 
         if uploaded_file is not None:
-            # Create placeholders for results outside the spinner
-            result_placeholder = st.empty()
-            message_placeholder = st.empty()
-
             try:
                 image_bytes = uploaded_file.getvalue()
+                # Attempt to open the image. Will raise error for non-images.
                 image = Image.open(io.BytesIO(image_bytes))
+                image.verify() # Verify it's a valid image format
+                # Re-open after verify
+                image = Image.open(io.BytesIO(image_bytes))
+
                 img_cv = np.array(image.convert('RGB'))
                 img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
 
+                # Show uploaded image initially
                 result_placeholder.image(image, caption='Uploaded Image.', use_container_width=True)
+                message_placeholder.empty() # Clear any previous status messages
 
                 # Use st.spinner for the processing block
                 with st.spinner("Analyzing image..."):
+                    # --- Run Inference ---
                     results = model(img_cv, conf=CONFIDENCE_THRESHOLD)
 
                     overlay_image = img_cv.copy()
@@ -207,7 +225,6 @@ with col2:
                         if r.masks is not None and len(class_ids) > 0:
                             masks = r.masks.data.cpu().numpy()
                             overlay_h, overlay_w = overlay_image.shape[:2]
-
                             for i, mask in enumerate(masks):
                                 if i < len(class_ids):
                                     mask_resized = cv2.resize(mask, (overlay_w, overlay_h), interpolation=cv2.INTER_NEAREST)
@@ -234,42 +251,40 @@ with col2:
                                         y_text_bg_top = max(0, y1 - label_height - baseline - 5)
                                         cv2.rectangle(overlay_image, (x1, y_text_bg_top), (x1 + label_width, y1), color, cv2.FILLED)
                                         y_text_pos = max(10, y1 - baseline - 3)
-                                        cv2.putText(overlay_image, label, (x1, y_text_pos),
-                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2,
-                                                    lineType=cv2.LINE_AA)
+                                        cv2.putText(overlay_image, label, (x1, y_text_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, lineType=cv2.LINE_AA)
 
                 # --- Refined Display Logic (Outside Spinner) ---
+                message_placeholder.empty() # Clear spinner message placeholder
                 if detection_made:
                     is_only_healthy = detected_classes == {'healthy_nail'}
-
                     if is_only_healthy:
                         message_placeholder.success("Healthy nail detected. No diseases found based on the analysis.")
                         result_image_rgb = cv2.cvtColor(overlay_image, cv2.COLOR_BGR2RGB)
-                        # Update the result placeholder with the processed image
                         result_placeholder.image(result_image_rgb, caption='Processed Image - Healthy Nail.', use_container_width=True)
                     else:
-                        # Diseases were detected (or a mix)
                         message_placeholder.warning("Nail condition(s) detected. This is not a medical diagnosis. Please consult a healthcare professional.")
                         result_image_rgb = cv2.cvtColor(overlay_image, cv2.COLOR_BGR2RGB)
-                        # Update the result placeholder with the processed image
                         result_placeholder.image(result_image_rgb, caption='Processed Image with Detections.', use_container_width=True)
-
                 else:
-                    # Nothing detected above threshold
                     message_placeholder.info(f"No nail conditions (including healthy) were detected above the {CONFIDENCE_THRESHOLD*100:.0f}% confidence threshold.")
-                    # Keep showing the original uploaded image in the result placeholder
-                    result_placeholder.image(image, caption='Uploaded Image.', use_container_width=True)
+                    # Keep showing the original uploaded image if nothing detected
+                    result_placeholder.image(image, caption='Uploaded Image (No Detections).', use_container_width=True)
 
 
-            except Exception as e:
-                # Clear placeholders on error and show error message
+            except (IOError, SyntaxError, Image.UnidentifiedImageError) as img_error:
+                # Specific Error for bad image files
                 result_placeholder.empty()
                 message_placeholder.empty()
-                st.error(f"An error occurred during image processing: {e}")
-                st.warning("Please ensure you uploaded a valid, uncorrupted image file (JPG, PNG, JPEG).")
+                st.error(f"Error reading image file: {img_error}")
+                st.warning("The uploaded file could not be processed as an image. Please upload a valid, uncorrupted JPG, PNG, or JPEG file.")
+            except Exception as e:
+                # Catch other unexpected errors during processing
+                result_placeholder.empty()
+                message_placeholder.empty()
+                st.error(f"An unexpected error occurred during analysis: {e}")
+                st.warning("Please try uploading the file again or use a different image.")
 
 # --- Sidebar for Ethics Notice ---
-# (Keep the sidebar code exactly the same as the previous response)
 st.sidebar.title("Ethical Considerations")
 st.sidebar.markdown("---")
 st.sidebar.subheader("Notice on Use, Redistribution, and Ethical Compliance")
