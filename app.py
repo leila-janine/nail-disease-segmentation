@@ -11,7 +11,7 @@ st.set_page_config(page_title="Nail Disease Segmentation", layout="wide")
 
 # --- Configuration ---
 MODEL_PATH = "best.pt" # Make sure best.pt is in the same folder as app.py
-CONFIDENCE_THRESHOLD = 0.10 # Keep low for detecting healthy/subtle cases
+CONFIDENCE_THRESHOLD = 0.20 # Keep low for detecting healthy/subtle cases
 MASK_ALPHA = 0.5 # Transparency of the segmentation masks (0.0 to 1.0)
 PROJECT_GROUP_NAME = "youngstunna" # Your group name
 
